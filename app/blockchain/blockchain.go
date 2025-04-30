@@ -103,6 +103,7 @@ func (chain *Blockchain) AddBlock(data []byte, dbConn *badger.DB, key []byte) {
 	if validatePow {
 		fmt.Println("Block baru valid")
 		fmt.Println("Block baru:", newBlock)
+
 	} else {
 		fmt.Println("Block baru tidak valid")
 		return
@@ -186,6 +187,41 @@ func (chain *Blockchain) Iterator(dbConn *badger.DB) *BlockChainIterator {
 	return iter
 }
 
+// ambil semua block dari blockchain
+func (chain *Blockchain) GetAllBlocks(dbConn *badger.DB) [][]byte {
+	var blocks [][]byte
+
+	err := dbConn.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			k := item.Key()
+
+			// Skip key "lh" (last hash pointer)
+			if string(k) == "lh" {
+				continue
+			}
+
+			err := item.Value(func(v []byte) error {
+				// Simpan value block ke slice
+				blocks = append(blocks, append([]byte{}, v...))
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	Handle(err)
+	return blocks
+}
+
 func (iter *BlockChainIterator) Next() []byte {
 	var dataKey []byte
 	err := iter.Database.View(func(txn *badger.Txn) error {
@@ -236,14 +272,42 @@ func (bc *Blockchain) IsValid() bool {
 	return true
 }
 
-func (bc *Blockchain) SyncWithPeer(peerBlocks []Block, election *Election) {
+func (bc *Blockchain) SyncWithPeer(peerBlocks [][]byte, dbConn *badger.DB) {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
 
-	if len(peerBlocks) > len(bc.Blocks) {
-		bc.Blocks = peerBlocks
-		bc.Election = election
+	var LastHash []byte
+
+	fmt.Println("Syncing with peer...")
+
+	//length peerBlocks
+	fmt.Println("Total blocks from peer:", len(peerBlocks))
+
+	for _, blockData := range peerBlocks {
+
+		block := Deserialize(blockData)
+
+		fmt.Println("hasil block data :", block)
+
+		fmt.Printf("Index: %d\n", block.Index)
+		fmt.Printf("Timestamp: %d\n", block.Timestamp)
+		fmt.Printf("Data: %v\n", block.Data)
+		fmt.Printf("PrevHash: %x\n", block.PrevHash)
+		fmt.Printf("Nonce: %d\n", block.Nonce)
+
+		fmt.Println("Block Hash:", block.Hash)
+		repository.SetDataRiwayat(dbConn, block.Hash, block.Serialize())
 	}
+
+	LastHash = peerBlocks[len(peerBlocks)-1]
+	fmt.Println("Last Hash:", LastHash)
+
+	repository.SetLastHash(dbConn, LastHash)
+	bc.LastHash = LastHash
+
+	fmt.Println("Syncing completed.")
+	fmt.Println("Total blocks synced:", len(peerBlocks))
+
 }
 
 // fungsi display blockchain untuk menampilkan blok-blok yang ada di blockchain

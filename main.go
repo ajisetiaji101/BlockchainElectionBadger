@@ -93,6 +93,7 @@ func main() {
 		cli.printChain(dbConn)
 	} else {
 		// Sinkronisasi blockchain untuk peer baru
+		fmt.Println("Requesting blockchain from peers...")
 		p2p.RequestBlockchainFromPeers()
 	}
 
@@ -406,6 +407,8 @@ func (cli *CommandLine) printChain(dbConn *badger.DB) {
 
 	blockchain.Handle(err)
 	block := blockchain.Deserialize(data)
+
+	fmt.Println("Data riwayat: ", block)
 
 	fmt.Printf("Index: %d\n", block.Index)
 

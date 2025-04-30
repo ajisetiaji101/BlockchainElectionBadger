@@ -24,6 +24,22 @@ func GetLastHash(db *badger.DB) ([]byte, error) {
 	return lastHash, nil
 }
 
+// get lh jika tidak ada buat lh baru
+func GetLastHashOrCreate(db *badger.DB) error {
+
+	return db.Update(func(txn *badger.Txn) error {
+		_, err := txn.Get([]byte("lh"))
+		if err != nil {
+			if err == badger.ErrKeyNotFound {
+				// Key tidak ditemukan, buat key baru
+				return txn.Set([]byte("lh"), []byte("0"))
+			}
+			return err
+		}
+		return nil // Key sudah ada, tidak perlu melakukan apa-apa
+	})
+}
+
 func SetLastHash(db *badger.DB, hash []byte) error {
 	err := db.Update(func(txn *badger.Txn) error {
 		return txn.Set([]byte("lh"), hash)

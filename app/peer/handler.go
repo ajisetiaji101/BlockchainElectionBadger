@@ -147,8 +147,13 @@ func (p2p *P2PNetwork) handleConnection(conn net.Conn) {
 		// }
 
 	case RequestBlockchain:
+
+		fmt.Println("Requesting blockchain from peer:", conn.RemoteAddr().String())
 		// blockchainData, _ := sonic.Marshal(p2p.Blockchain)
-		blockchainData := p2p.Blockchain.GetBlockByKey(p2p.dbConn)
+		blockchainData := p2p.Blockchain.GetAllBlocks(p2p.dbConn)
+
+		fmt.Println("blockchainData:", blockchainData)
+
 		inventory := Inv{Data: blockchainData}
 		payload := GobEncode(inventory)
 		message := Message{Type: BlockchainUpdate, Data: payload}
@@ -282,6 +287,9 @@ func (p2p *P2PNetwork) AddRiwayatTrx(data model.AddDataRiwayat) {
 	// }
 
 	p2p.Blockchain.AddBlock(transactionDataString, p2p.dbConn, []byte(key))
+
+	p2p.BroadcastBlockchain()
+	fmt.Println("History successful for record:", data.WarungCode, "with unique code payment:", data.UniqueCodePayment)
 }
 
 // // Fungsi untuk menangani suara dari voter dan menambahkan blok baru.
@@ -363,20 +371,34 @@ func (p2p *P2PNetwork) RequestBlockchainFromPeers() {
 		// Terima blockchain dari peer
 		reader := bufio.NewReader(conn)
 		peerData, _ := reader.ReadBytes('\n')
+
+		fmt.Println("peerData:", string(peerData))
+
 		var receivedMessage Message
 		if err := sonic.Unmarshal(peerData, &receivedMessage); err != nil {
 			fmt.Println("Error decoding blockchain from peer:", err)
 			continue
 		}
 
+		fmt.Println("Received message type:", receivedMessage.Type)
+
 		// Pastikan type data adalah BlockchainUpdate sebelum disinkronkan
 		if receivedMessage.Type == BlockchainUpdate {
-			var peerBlockchain *blockchain.Blockchain
-			if err := sonic.Unmarshal(receivedMessage.Data, &peerBlockchain); err != nil {
-				fmt.Println("Error decoding blockchain blocks:", err)
+			var peerBlockchain Inv
+
+			decode := gob.NewDecoder(bytes.NewReader(receivedMessage.Data))
+			err := decode.Decode(&peerBlockchain)
+			if err != nil {
+				fmt.Println("Error decoding blockchain data:", err)
 				continue
 			}
-			p2p.Blockchain.SyncWithPeer(peerBlockchain.Blocks, peerBlockchain.Election)
+			fmt.Println("peerBlockchain berhasil di decode")
+
+			// if err := sonic.Unmarshal(receivedMessage.Data, &peerBlockchain); err != nil {
+			// 	fmt.Println("Error decoding blockchain blocks:", err)
+			// 	continue
+			// }
+			p2p.Blockchain.SyncWithPeer(peerBlockchain.Data, p2p.dbConn)
 			fmt.Println("Synchronized blockchain with peer:", peer.Address)
 			break // Stop setelah sinkronisasi dengan satu peer
 		}

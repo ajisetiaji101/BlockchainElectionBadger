@@ -11,20 +11,21 @@ import (
 
 // BroadcastBlockchain mengirimkan seluruh blockchain ke semua peers yang terhubung.
 func (p2p *P2PNetwork) BroadcastBlockchain() {
-	blockchainData, err := sonic.Marshal(p2p.Blockchain)
-	if err != nil {
-		fmt.Println("Gagal membuat JSON untuk Blockchain:", err)
-		return
-	}
+	blockchainData := p2p.Blockchain.GetAllBlocks(p2p.dbConn)
 
-	r, s, err := signature.SignData(p2p.privateKey, string(blockchainData))
+	fmt.Println("blockchainData:", blockchainData)
+
+	inventory := Inv{Data: blockchainData}
+	payload := GobEncode(inventory)
+
+	r, s, err := signature.SignData(p2p.privateKey, string(payload))
 	if err != nil {
 		fmt.Println("Failed to sign blockchain data:", err)
 		return
 	}
 	message := Message{
 		Type: BlockchainUpdate,
-		Data: blockchainData,
+		Data: payload,
 		Signature: signature.Signature{
 			R: r,
 			S: s,
