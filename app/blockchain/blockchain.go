@@ -2,6 +2,7 @@ package blockchain
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"myapp/app/repository"
 	"sync"
@@ -80,7 +81,7 @@ func (bc *Blockchain) SetGenesisBlock(dbConn *badger.DB) bool {
 	return isGenesis
 }
 
-func (chain *Blockchain) AddBlock(data []byte, dbConn *badger.DB, key string) {
+func (chain *Blockchain) AddBlock(data []byte, dbConn *badger.DB, key []byte) {
 
 	LastHash, err := repository.GetLastHash(dbConn)
 
@@ -97,7 +98,7 @@ func (chain *Blockchain) AddBlock(data []byte, dbConn *badger.DB, key string) {
 
 	Handle(err)
 
-	newBlock, validatePow := CreateBlock(index, data, LastHash)
+	newBlock, validatePow := CreateBlock(index, data, LastHash, []byte(key))
 
 	if validatePow {
 		fmt.Println("Block baru valid")
@@ -107,9 +108,9 @@ func (chain *Blockchain) AddBlock(data []byte, dbConn *badger.DB, key string) {
 		return
 	}
 
-	repository.SetDataRiwayat(dbConn, []byte(key), newBlock.Serialize())
+	repository.SetDataRiwayat(dbConn, key, newBlock.Serialize())
 
-	repository.SetLastHash(dbConn, []byte(key))
+	repository.SetLastHash(dbConn, key)
 
 	chain.LastHash = []byte(key)
 
@@ -137,6 +138,46 @@ func (chain *Blockchain) getDataByTes(dbConn *badger.DB) {
 	Handle(err)
 }
 
+func (chain *Blockchain) GetBlockByKey(dbConn *badger.DB) [][]byte {
+	var blocks [][]byte
+
+	iter := chain.Iterator(dbConn)
+
+	for {
+		blockKey := iter.Next()
+
+		blocks = append(blocks, blockKey)
+
+		if len(blockKey) == 0 {
+			break
+		}
+	}
+
+	return blocks
+}
+
+func (chain *Blockchain) GetBlock(blockHash []byte, dbConn *badger.DB) ([]byte, error) {
+	var block []byte
+
+	err := dbConn.View(func(txn *badger.Txn) error {
+		if item, err := txn.Get(blockHash); err != nil {
+			return errors.New("Block is not found")
+		} else {
+			block, err = item.ValueCopy(nil)
+
+			Handle(err)
+
+			// block = *Deserialize(blockData)
+		}
+		return nil
+	})
+	if err != nil {
+		return block, err
+	}
+
+	return block, nil
+}
+
 func (chain *Blockchain) Iterator(dbConn *badger.DB) *BlockChainIterator {
 	iter := &BlockChainIterator{chain.LastHash, dbConn}
 
@@ -145,24 +186,24 @@ func (chain *Blockchain) Iterator(dbConn *badger.DB) *BlockChainIterator {
 	return iter
 }
 
-func (iter *BlockChainIterator) Next() *Block {
-	var block *Block
+func (iter *BlockChainIterator) Next() []byte {
+	var dataKey []byte
 	err := iter.Database.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(iter.CurrentHash)
 
 		fmt.Println("Iter Current Hash:", item)
 
 		Handle(err)
-		encodedBlock, err := item.ValueCopy(nil)
-		block = Deserialize(encodedBlock)
+
+		dataKey = item.KeyCopy(nil)
 
 		return err
 	})
 	Handle(err)
 
-	iter.CurrentHash = block.PrevHash
+	iter.CurrentHash = dataKey
 
-	return block
+	return dataKey
 }
 
 // func (bc *Blockchain) AddBlock(newBlock Block) bool {

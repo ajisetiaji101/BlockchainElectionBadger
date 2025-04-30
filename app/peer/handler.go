@@ -2,7 +2,9 @@ package peer
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/ecdsa"
+	"encoding/gob"
 	"fmt"
 	"myapp/app/blockchain"
 	"myapp/app/model"
@@ -20,6 +22,8 @@ const (
 	RequestBlockchain MessageType = "request_blockchain"
 	NewPeerJoined     MessageType = "new_peer_joined"
 	ShutdownPeer      MessageType = "shutdown_peer"
+	GetDataBlockchain MessageType = "get_data_blockchain"
+	ReceivedBlock     MessageType = "received_block"
 )
 
 type Message struct {
@@ -28,6 +32,14 @@ type Message struct {
 	Signature     signature.Signature `json:"signature"`
 	SenderAddress string              `json:"senderAddress"`
 }
+
+type Inv struct {
+	Data [][]byte `json:"data"`
+}
+
+var (
+	blocksInTransit = [][]byte{}
+)
 
 // Handler untuk setiap koneksi peer
 func (p2p *P2PNetwork) handleConnection(conn net.Conn) {
@@ -89,23 +101,103 @@ func (p2p *P2PNetwork) handleConnection(conn net.Conn) {
 		}
 
 		// Verifikasi dan update blockchain
-		var blockchainData *blockchain.Blockchain
-		if err := sonic.Unmarshal(incomingMessage.Data, &blockchainData); err != nil {
-			fmt.Println("Error decoding blockchain:", err)
-			return
+		// var blockchainData *blockchain.Blockchain
+
+		var payload Inv
+		var buff bytes.Buffer
+
+		dec := gob.NewDecoder(&buff)
+		err = dec.Decode(&payload)
+
+		blockchain.Handle(err)
+
+		fmt.Printf("Recevied inventory with %d %s\n", len(payload.Data), incomingMessage.Type)
+
+		blocksInTransit := payload.Data
+
+		blockhashKey := payload.Data[0]
+
+		message := Message{Type: GetDataBlockchain, Data: blockhashKey}
+		data, _ := sonic.Marshal(message)
+		writer := bufio.NewWriter(conn)
+		data = append(data, '\n')
+
+		_, err = writer.WriteString(string(data))
+		if err != nil {
+			fmt.Println("gagal mengirim request:", err)
 		}
-		if p2p.VerifyAndUpdateBlockchain(blockchainData) {
-			fmt.Println("Updated local blockchain with incoming blockchain.")
-		} else {
-			fmt.Println("Received invalid or shorter blockchain.")
+		writer.Flush()
+
+		newInTransit := [][]byte{}
+		for _, b := range blocksInTransit {
+			if bytes.Compare(b, blockhashKey) != 0 {
+				newInTransit = append(newInTransit, b)
+			}
 		}
+		blocksInTransit = newInTransit
+
+		// if err := sonic.Unmarshal(incomingMessage.Data, &blockchainData); err != nil {
+		// 	fmt.Println("Error decoding blockchain:", err)
+		// 	return
+		// }
+		// if p2p.VerifyAndUpdateBlockchain(blockchainData) {
+		// 	fmt.Println("Updated local blockchain with incoming blockchain.")
+		// } else {
+		// 	fmt.Println("Received invalid or shorter blockchain.")
+		// }
 
 	case RequestBlockchain:
-		blockchainData, _ := sonic.Marshal(p2p.Blockchain)
-		message := Message{Type: BlockchainUpdate, Data: blockchainData}
+		// blockchainData, _ := sonic.Marshal(p2p.Blockchain)
+		blockchainData := p2p.Blockchain.GetBlockByKey(p2p.dbConn)
+		inventory := Inv{Data: blockchainData}
+		payload := GobEncode(inventory)
+		message := Message{Type: BlockchainUpdate, Data: payload}
 		response, _ := sonic.Marshal(message)
 		conn.Write(response)
+	case GetDataBlockchain:
+		var blockhashKey []byte
+		err := sonic.Unmarshal(incomingMessage.Data, &blockhashKey)
+		blockchain.Handle(err)
+		fmt.Println("blockhashKey:", blockhashKey)
 
+		blockGetExist, err := p2p.Blockchain.GetBlock(blockhashKey, p2p.dbConn)
+		blockchain.Handle(err)
+
+		message := Message{Type: ReceivedBlock, Data: blockGetExist}
+		response, _ := sonic.Marshal(message)
+		conn.Write(response)
+	case ReceivedBlock:
+		var blockbyte []byte
+		err := sonic.Unmarshal(incomingMessage.Data, &blockbyte)
+		blockchain.Handle(err)
+		fmt.Println("blockbyte:", blockbyte)
+
+		block := blockchain.Deserialize(blockbyte)
+		fmt.Println("block:", block)
+
+		if block != nil {
+			p2p.Blockchain.AddBlock(blockbyte, p2p.dbConn, block.Key)
+		} else {
+			fmt.Println("Received invalid block.")
+		}
+
+		if len(blocksInTransit) > 0 {
+			blockHash := blocksInTransit[0]
+			message := Message{Type: GetDataBlockchain, Data: blockHash}
+			data, _ := sonic.Marshal(message)
+			writer := bufio.NewWriter(conn)
+			data = append(data, '\n')
+
+			_, err = writer.WriteString(string(data))
+			if err != nil {
+				fmt.Println("gagal mengirim request:", err)
+			}
+			writer.Flush()
+
+			blocksInTransit = blocksInTransit[1:]
+		} else {
+			fmt.Println("No blocks in transit")
+		}
 	case NewPeerJoined:
 		peer := &Peer{}
 		err := sonic.Unmarshal(incomingMessage.Data, peer)
@@ -189,7 +281,7 @@ func (p2p *P2PNetwork) AddRiwayatTrx(data model.AddDataRiwayat) {
 	// 	newBlock.PrevHash = p2p.Blockchain.Blocks[len(p2p.Blockchain.Blocks)-1].Hash
 	// }
 
-	p2p.Blockchain.AddBlock(transactionDataString, p2p.dbConn, key)
+	p2p.Blockchain.AddBlock(transactionDataString, p2p.dbConn, []byte(key))
 }
 
 // // Fungsi untuk menangani suara dari voter dan menambahkan blok baru.
@@ -289,4 +381,15 @@ func (p2p *P2PNetwork) RequestBlockchainFromPeers() {
 			break // Stop setelah sinkronisasi dengan satu peer
 		}
 	}
+}
+
+func GobEncode(data interface{}) []byte {
+	var buff bytes.Buffer
+
+	enc := gob.NewEncoder(&buff)
+	err := enc.Encode(data)
+
+	blockchain.Handle(err)
+
+	return buff.Bytes()
 }
