@@ -104,7 +104,7 @@ func (chain *Blockchain) AddBlock(data []byte, dbConn *badger.DB, key []byte, da
 
 	Handle(err)
 
-	newBlock, validatePow := CreateBlock(index, data, LastHash, key, dataKey)
+	newBlock, validatePow := CreateBlock(index, data, block.Hash, key, dataKey)
 
 	if validatePow {
 		fmt.Println("Block baru valid")
@@ -198,7 +198,7 @@ func (chain *Blockchain) GetBlockByKey(dbConn *badger.DB, dataAkhirHash []byte) 
 
 		fmt.Println("Block Data  berhasil keluar")
 
-		blocks = append(blocks, block.Key)
+		blocks = append(blocks, block.Serialize())
 
 		fmt.Println("Block Hash:", block.Key)
 
@@ -368,7 +368,15 @@ func (bc *Blockchain) SyncWithPeer(peerBlocks [][]byte, dbConn *badger.DB) {
 		repository.SetDataRiwayat(dbConn, block.Hash, block.Serialize())
 	}
 
-	LastHash = peerBlocks[len(peerBlocks)-1]
+	LastHashBlock := peerBlocks[len(peerBlocks)-1]
+
+	blockLast := Deserialize(LastHashBlock)
+	fmt.Println("Block terakhir:", blockLast)
+
+	fmt.Println("Block terakhir Hash:", blockLast.Hash)
+
+	LastHash = blockLast.Key
+
 	fmt.Println("Last Hash:", LastHash)
 
 	repository.SetLastHash(dbConn, LastHash)

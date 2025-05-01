@@ -405,23 +405,39 @@ func getBlockdanElection(w http.ResponseWriter, r *http.Request, p2p *peer.P2PNe
 func (cli *CommandLine) printChain(dbConn *badger.DB) {
 	fmt.Println("Printing the chain...")
 
-	// data, err := repository.GetDataRiwayat(dbConn, []byte("aji1_026_20231001"))
+	//looping semuanya block dari dconn
+	err := dbConn.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		it := txn.NewIterator(opts)
+		defer it.Close()
 
-	// blockchain.Handle(err)
-	// block := blockchain.Deserialize(data)
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			k := item.Key()
 
-	// fmt.Println("Data riwayat: ", block)
+			// Skip key "lh" (last hash pointer)
+			if string(k) == "lh" {
+				continue
+			}
 
-	// fmt.Printf("Index: %d\n", block.Index)
+			err := item.Value(func(v []byte) error {
+				block := blockchain.Deserialize(v)
+				fmt.Printf("Index: %d\n", block.Index)
+				fmt.Printf("Timestamp: %d\n", block.Timestamp)
+				fmt.Printf("Data: %v\n", block.Data)
+				fmt.Printf("Hash: %x\n", block.Hash)
+				fmt.Printf("PrevHash: %x\n", block.PrevHash)
+				fmt.Printf("Nonce: %d\n", block.Nonce)
+				fmt.Println()
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 
-	// fmt.Printf("Index: %d\n", block.Index)
-	// fmt.Printf("Timestamp: %d\n", block.Timestamp)
-	// fmt.Printf("Prev. hash: %x\n", block.PrevHash)
-	// fmt.Printf("Prev. key: %x\n", block.PrevKey)
-	// fmt.Printf("Data: %s\n", block.Data)
-	// fmt.Printf("Hash: %x\n", block.Hash)
-	// pow := blockchain.NewProofOfWork(block)
-	// fmt.Printf("PoW: %s\n", strconv.FormatBool(pow.Validate()))
-	// fmt.Println()
-
+	blockchain.Handle(err)
+	fmt.Println("Chain printed successfully.")
 }
