@@ -11,7 +11,8 @@ import (
 
 // BroadcastBlockchain mengirimkan seluruh blockchain ke semua peers yang terhubung.
 func (p2p *P2PNetwork) BroadcastBlockchain() {
-	blockchainData := p2p.Blockchain.GetAllBlocks(p2p.dbConn)
+
+	blockchainData := p2p.Blockchain.GetBlockByKey(p2p.dbConn, p2p.Blockchain.LastHash)
 
 	fmt.Println("blockchainData:", blockchainData)
 

@@ -11,7 +11,6 @@ import (
 	"myapp/app/peer"
 	"myapp/app/pkg/hmac"
 	"myapp/app/pkg/signature"
-	"myapp/app/repository"
 	"net/http"
 	"os"
 	"os/signal"
@@ -94,6 +93,9 @@ func main() {
 	} else {
 		// Sinkronisasi blockchain untuk peer baru
 		fmt.Println("Requesting blockchain from peers...")
+
+		p2p.Blockchain.GetLastHashCek(dbConn)
+
 		p2p.RequestBlockchainFromPeers()
 	}
 
@@ -403,22 +405,23 @@ func getBlockdanElection(w http.ResponseWriter, r *http.Request, p2p *peer.P2PNe
 func (cli *CommandLine) printChain(dbConn *badger.DB) {
 	fmt.Println("Printing the chain...")
 
-	data, err := repository.GetDataRiwayat(dbConn, []byte("aji1_026_20231001"))
+	// data, err := repository.GetDataRiwayat(dbConn, []byte("aji1_026_20231001"))
 
-	blockchain.Handle(err)
-	block := blockchain.Deserialize(data)
+	// blockchain.Handle(err)
+	// block := blockchain.Deserialize(data)
 
-	fmt.Println("Data riwayat: ", block)
+	// fmt.Println("Data riwayat: ", block)
 
-	fmt.Printf("Index: %d\n", block.Index)
+	// fmt.Printf("Index: %d\n", block.Index)
 
-	fmt.Printf("Index: %d\n", block.Index)
-	fmt.Printf("Timestamp: %d\n", block.Timestamp)
-	fmt.Printf("Prev. hash: %x\n", block.PrevHash)
-	fmt.Printf("Data: %s\n", block.Data)
-	fmt.Printf("Hash: %x\n", block.Hash)
-	pow := blockchain.NewProofOfWork(block)
-	fmt.Printf("PoW: %s\n", strconv.FormatBool(pow.Validate()))
-	fmt.Println()
+	// fmt.Printf("Index: %d\n", block.Index)
+	// fmt.Printf("Timestamp: %d\n", block.Timestamp)
+	// fmt.Printf("Prev. hash: %x\n", block.PrevHash)
+	// fmt.Printf("Prev. key: %x\n", block.PrevKey)
+	// fmt.Printf("Data: %s\n", block.Data)
+	// fmt.Printf("Hash: %x\n", block.Hash)
+	// pow := blockchain.NewProofOfWork(block)
+	// fmt.Printf("PoW: %s\n", strconv.FormatBool(pow.Validate()))
+	// fmt.Println()
 
 }

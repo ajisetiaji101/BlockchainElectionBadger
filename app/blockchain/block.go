@@ -13,22 +13,24 @@ type Block struct {
 	Key       []byte
 	Data      []byte
 	Hash      []byte
+	PrevKey   []byte
 	PrevHash  []byte
 	Nonce     int
 }
 
-func CreateBlock(index int, data []byte, prevHash []byte, key []byte) (*Block, bool) {
+func CreateBlock(index int, data []byte, prevHash []byte, key []byte, prevKey []byte) (*Block, bool) {
 	genesisBlock := Block{
 		Index:     index,
 		Timestamp: time.Now().Unix(),
 		Data:      []byte(data),
 		PrevHash:  prevHash,
+		PrevKey:   prevKey,
+		Key:       key,
 	}
 	pow := NewProofOfWork(&genesisBlock)
 	nonce, hash := pow.Run()
 	genesisBlock.Hash = hash
 	genesisBlock.Nonce = nonce
-	genesisBlock.Key = key
 
 	return &genesisBlock, pow.Validate()
 }
@@ -39,6 +41,7 @@ func CreateBlockGenesis(index int, data []byte, prevHash []byte) (*Block, bool) 
 		Timestamp: time.Now().Unix(),
 		Data:      []byte(data),
 		PrevHash:  prevHash,
+		PrevKey:   prevHash,
 	}
 	pow := NewProofOfWork(&genesisBlock)
 	nonce, hash := pow.Run()

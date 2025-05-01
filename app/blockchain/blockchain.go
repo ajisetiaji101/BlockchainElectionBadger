@@ -64,11 +64,17 @@ func (bc *Blockchain) SetGenesisBlock(dbConn *badger.DB) bool {
 			fmt.Println("Genesis block already exists")
 			item, err := txn.Get([]byte("lh"))
 			Handle(err)
+
 			bc.LastHash, err = item.ValueCopy(nil)
+
+			Handle(err)
 
 			fmt.Println("Last Hash:", bc.LastHash)
 		} else {
 			fmt.Println("Genesis block not created")
+			item, err := txn.Get([]byte("lh"))
+			Handle(err)
+			bc.LastHash, err = item.ValueCopy(nil)
 		}
 
 		Handle(err)
@@ -81,7 +87,7 @@ func (bc *Blockchain) SetGenesisBlock(dbConn *badger.DB) bool {
 	return isGenesis
 }
 
-func (chain *Blockchain) AddBlock(data []byte, dbConn *badger.DB, key []byte) {
+func (chain *Blockchain) AddBlock(data []byte, dbConn *badger.DB, key []byte, dataKey []byte) {
 
 	LastHash, err := repository.GetLastHash(dbConn)
 
@@ -98,7 +104,7 @@ func (chain *Blockchain) AddBlock(data []byte, dbConn *badger.DB, key []byte) {
 
 	Handle(err)
 
-	newBlock, validatePow := CreateBlock(index, data, LastHash, []byte(key))
+	newBlock, validatePow := CreateBlock(index, data, LastHash, key, dataKey)
 
 	if validatePow {
 		fmt.Println("Block baru valid")
@@ -111,9 +117,13 @@ func (chain *Blockchain) AddBlock(data []byte, dbConn *badger.DB, key []byte) {
 
 	repository.SetDataRiwayat(dbConn, key, newBlock.Serialize())
 
+	fmt.Println("SetDataRiwayat: berhasil")
+
 	repository.SetLastHash(dbConn, key)
 
-	chain.LastHash = []byte(key)
+	fmt.Println("SetLastHash: berhasil")
+
+	chain.LastHash = key
 
 	Handle(err)
 }
@@ -139,17 +149,64 @@ func (chain *Blockchain) getDataByTes(dbConn *badger.DB) {
 	Handle(err)
 }
 
-func (chain *Blockchain) GetBlockByKey(dbConn *badger.DB) [][]byte {
+func (chain *Blockchain) GetLastHash(dbConn *badger.DB) []byte {
+	var LastHash []byte
+
+	data, err := repository.GetLastHash(dbConn)
+	Handle(err)
+
+	fmt.Println("Last Hash:", data)
+
+	chain.LastHash = data
+
+	LastHash = data
+
+	return LastHash
+}
+
+func (chain *Blockchain) GetLastHashCek(dbConn *badger.DB) []byte {
+	var LastHash []byte
+
+	err := repository.GetLastHashOrCreate(dbConn)
+
+	fmt.Println("create new lash block", LastHash)
+
+	LastHash, err = repository.GetLastHash(dbConn)
+
+	Handle(err)
+
+	chain.LastHash = LastHash
+
+	return LastHash
+}
+
+func (chain *Blockchain) GetBlockByKey(dbConn *badger.DB, dataAkhirHash []byte) [][]byte {
 	var blocks [][]byte
 
-	iter := chain.Iterator(dbConn)
+	iter := chain.Iterator(dbConn, dataAkhirHash)
 
+	//skip lh key
 	for {
-		blockKey := iter.Next()
+		block := iter.Next()
 
-		blocks = append(blocks, blockKey)
+		fmt.Printf("Index: %d\n", block.Index)
+		fmt.Printf("Timestamp: %d\n", block.Timestamp)
+		fmt.Printf("Prev. hash: %x\n", block.PrevHash)
+		fmt.Printf("Prev. key: %x\n", block.PrevKey)
+		fmt.Printf("Data: %s\n", block.Data)
+		fmt.Printf("Hash: %x\n", block.Hash)
 
-		if len(blockKey) == 0 {
+		fmt.Println("Block Data  berhasil keluar")
+
+		blocks = append(blocks, block.Key)
+
+		fmt.Println("Block Hash:", block.Key)
+
+		fmt.Println("Panjang block PrevHash:", len(block.PrevHash))
+
+		fmt.Println("Block PrevHash:", block.PrevHash)
+
+		if len(block.PrevHash) == 0 {
 			break
 		}
 	}
@@ -179,8 +236,8 @@ func (chain *Blockchain) GetBlock(blockHash []byte, dbConn *badger.DB) ([]byte, 
 	return block, nil
 }
 
-func (chain *Blockchain) Iterator(dbConn *badger.DB) *BlockChainIterator {
-	iter := &BlockChainIterator{chain.LastHash, dbConn}
+func (chain *Blockchain) Iterator(dbConn *badger.DB, dataAkhirHash []byte) *BlockChainIterator {
+	iter := &BlockChainIterator{dataAkhirHash, dbConn}
 
 	fmt.Println("Iter Last Hash:", iter.CurrentHash)
 
@@ -222,24 +279,36 @@ func (chain *Blockchain) GetAllBlocks(dbConn *badger.DB) [][]byte {
 	return blocks
 }
 
-func (iter *BlockChainIterator) Next() []byte {
-	var dataKey []byte
+func (iter *BlockChainIterator) Next() *Block {
+	var block *Block
+
 	err := iter.Database.View(func(txn *badger.Txn) error {
+
+		fmt.Println("Iter Current Hash yang masuk :", iter.CurrentHash)
 		item, err := txn.Get(iter.CurrentHash)
 
-		fmt.Println("Iter Current Hash:", item)
+		fmt.Println("Iter Current value GET:", item)
+
+		itemdata, err := item.ValueCopy(nil)
+		fmt.Println("Iter Current value:", itemdata)
+
+		block = Deserialize(itemdata)
+
+		fmt.Print("proses deserialize block:", block)
 
 		Handle(err)
 
-		dataKey = item.KeyCopy(nil)
+		// dataKey = item.KeyCopy(nil)
 
 		return err
 	})
 	Handle(err)
 
-	iter.CurrentHash = dataKey
+	fmt.Println("Iter PrevKey:", block.PrevKey)
 
-	return dataKey
+	iter.CurrentHash = block.PrevKey
+
+	return block
 }
 
 // func (bc *Blockchain) AddBlock(newBlock Block) bool {

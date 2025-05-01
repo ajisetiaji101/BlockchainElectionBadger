@@ -31,6 +31,7 @@ type Message struct {
 	Data          []byte              `json:"data"`
 	Signature     signature.Signature `json:"signature"`
 	SenderAddress string              `json:"senderAddress"`
+	LastHash      []byte              `json:"lastHash"`
 }
 
 type Inv struct {
@@ -103,13 +104,16 @@ func (p2p *P2PNetwork) handleConnection(conn net.Conn) {
 		// Verifikasi dan update blockchain
 		// var blockchainData *blockchain.Blockchain
 
-		var payload Inv
-		var buff bytes.Buffer
+		fmt.Println("Verifying and updating blockchain...")
 
-		dec := gob.NewDecoder(&buff)
-		err = dec.Decode(&payload)
+		var payload Inv
+
+		decode := gob.NewDecoder(bytes.NewReader(incomingMessage.Data))
+		err = decode.Decode(&payload)
 
 		blockchain.Handle(err)
+
+		fmt.Println("payload berhasil di decode")
 
 		fmt.Printf("Recevied inventory with %d %s\n", len(payload.Data), incomingMessage.Type)
 
@@ -148,9 +152,22 @@ func (p2p *P2PNetwork) handleConnection(conn net.Conn) {
 
 	case RequestBlockchain:
 
-		fmt.Println("Requesting blockchain from peer:", conn.RemoteAddr().String())
-		// blockchainData, _ := sonic.Marshal(p2p.Blockchain)
-		blockchainData := p2p.Blockchain.GetAllBlocks(p2p.dbConn)
+		fmt.Println("Requesting blockchain from peerny:", conn.RemoteAddr().String())
+
+		fmt.Println("incomingMessage.LastHash:", incomingMessage.LastHash)
+
+		var blockchainData [][]byte
+
+		if bytes.Equal(incomingMessage.LastHash, []byte("0")) {
+
+			fmt.Println("Requesting all blocks from peer:", conn.RemoteAddr().String())
+			// Kirim semua blok ke peer
+			blockchainData = p2p.Blockchain.GetAllBlocks(p2p.dbConn)
+		} else {
+			fmt.Println("Requesting based last hash blocks from peer:", conn.RemoteAddr().String())
+			// Kirim blok yang lebih baru dari lastHash
+			blockchainData = p2p.Blockchain.GetBlockByKey(p2p.dbConn, incomingMessage.LastHash)
+		}
 
 		fmt.Println("blockchainData:", blockchainData)
 
@@ -180,8 +197,11 @@ func (p2p *P2PNetwork) handleConnection(conn net.Conn) {
 		block := blockchain.Deserialize(blockbyte)
 		fmt.Println("block:", block)
 
+		dataAkhirHash := p2p.Blockchain.GetLastHash(p2p.dbConn)
+		fmt.Println("dataAkhirHash:", dataAkhirHash)
+
 		if block != nil {
-			p2p.Blockchain.AddBlock(blockbyte, p2p.dbConn, block.Key)
+			p2p.Blockchain.AddBlock(blockbyte, p2p.dbConn, block.Key, dataAkhirHash)
 		} else {
 			fmt.Println("Received invalid block.")
 		}
@@ -286,7 +306,11 @@ func (p2p *P2PNetwork) AddRiwayatTrx(data model.AddDataRiwayat) {
 	// 	newBlock.PrevHash = p2p.Blockchain.Blocks[len(p2p.Blockchain.Blocks)-1].Hash
 	// }
 
-	p2p.Blockchain.AddBlock(transactionDataString, p2p.dbConn, []byte(key))
+	dataPrev := p2p.Blockchain.GetLastHash(p2p.dbConn)
+
+	fmt.Println("dataPrev:", dataPrev)
+
+	p2p.Blockchain.AddBlock(transactionDataString, p2p.dbConn, []byte(key), dataPrev)
 
 	p2p.BroadcastBlockchain()
 	fmt.Println("History successful for record:", data.WarungCode, "with unique code payment:", data.UniqueCodePayment)
@@ -356,7 +380,7 @@ func (p2p *P2PNetwork) RequestBlockchainFromPeers() {
 		defer conn.Close()
 
 		// Kirim permintaan untuk mendapatkan blockchain
-		message := Message{Type: RequestBlockchain}
+		message := Message{Type: RequestBlockchain, LastHash: p2p.Blockchain.LastHash}
 		data, _ := sonic.Marshal(message)
 		writer := bufio.NewWriter(conn)
 		data = append(data, '\n')
